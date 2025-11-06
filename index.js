@@ -2,14 +2,16 @@ const express = require("express");
 const axios = require("axios");
 
 const app = express();
+
 app.use(express.json());
+const dotenv = require("dotenv");
+dotenv.config();
 
 // 🧠 Config
-
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 const BACKEND_CALLBACK_URL = process.env.BACKEND_CALLBACK_URL;
-const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://your-domain.com/telegram-webhook";
+const WEBHOOK_URL = process.env.WEBHOOK_URL;
 
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
@@ -53,6 +55,8 @@ app.post("/send-request", async (req, res) => {
     res.json({ status: "ok" });
   } catch (err) {
     console.error("Error sending Telegram message:", err.message);
+    console.log("BOT_TOKEN loaded:", !!BOT_TOKEN);
+    console.log("CHAT_ID loaded:", CHAT_ID);
     res.status(500).json({ error: err.message });
   }
 });
@@ -109,6 +113,18 @@ app.get("/set-webhook", async (req, res) => {
     res.json(resp.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/test-send", async (req, res) => {
+  try {
+    const resp = await axios.post(`${TELEGRAM_API}/sendMessage`, {
+      chat_id: CHAT_ID,
+      text: "Hello 👋 from /test-send",
+    });
+    res.json(resp.data);
+  } catch (err) {
+    res.status(500).json(err.response?.data || err.message);
   }
 });
 
