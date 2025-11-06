@@ -1,0 +1,28 @@
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables / secrets
+.env
+.env.local
+.env.development
+.env.production
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+logs/**/*.log
+
+# Render or local build artifacts
+dist/
+build/
+.cache/
+.tmp/
+
+#
