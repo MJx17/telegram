@@ -5,10 +5,11 @@ const app = express();
 app.use(express.json());
 
 // 🧠 Config
-const BOT_TOKEN = "7568206820:AAEoTmRSaPvGffcJ1y9HT4l26M18a5SoPSA";
-const CHAT_ID = "YOUR_CHAT_ID";
-const BACKEND_CALLBACK_URL = "https://your-backend-domain.com/api/privilege/decision";
-const WEBHOOK_URL = "https://your-public-domain.com/telegram-webhook"; // Set this to your hosted URL
+
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const CHAT_ID = process.env.CHAT_ID;
+const BACKEND_CALLBACK_URL = process.env.BACKEND_CALLBACK_URL;
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://your-domain.com/telegram-webhook";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
