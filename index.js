@@ -16,7 +16,6 @@ const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const Request = require("./request");
 
-// 📨 Send approval request
 app.post("/send-request", async (req, res) => {
   try {
     const {
@@ -25,9 +24,20 @@ app.post("/send-request", async (req, res) => {
       system_name,
       type,
       reason,
-      requested_at
+      requested_at,
     } = req.body;
 
+    // 🧩 1️⃣ Save to MongoDB
+    const newRequest = await Request.create({
+      request_uuid,
+      requestor_fullname,
+      system_name,
+      type,
+      reason,
+      requested_at,
+    });
+
+    // 🧠 2️⃣ Prepare Telegram message text
     const text = `
 🔐 <b>Privilege Access Request</b>
 
@@ -38,6 +48,7 @@ app.post("/send-request", async (req, res) => {
 ⏰ <b>Requested At:</b> ${requested_at}
 `;
 
+    // 📨 3️⃣ Telegram payload
     const payload = {
       chat_id: CHAT_ID,
       text,
@@ -46,19 +57,29 @@ app.post("/send-request", async (req, res) => {
         inline_keyboard: [
           [
             { text: "✅ Approve", callback_data: `approve:${request_uuid}` },
-            { text: "❌ Decline", callback_data: `decline:${request_uuid}` }
-          ]
-        ]
-      }
+            { text: "❌ Decline", callback_data: `decline:${request_uuid}` },
+          ],
+        ],
+      },
     };
 
+    // 🚀 4️⃣ Send to Telegram
     await axios.post(`${TELEGRAM_API}/sendMessage`, payload);
-    res.json({ status: "ok" });
+
+    // ✅ 5️⃣ Respond success
+    res.status(200).json({
+      status: "ok",
+      message: "Request sent and saved successfully.",
+      data: newRequest,
+    });
   } catch (err) {
-    console.error("Error sending Telegram message:", err.message);
-    console.log("BOT_TOKEN loaded:", !!BOT_TOKEN);
-    console.log("CHAT_ID loaded:", CHAT_ID);
-    res.status(500).json({ error: err.message });
+    console.error("❌ Error in /send-request:", err.message);
+
+    res.status(500).json({
+      status: "error",
+      message: "Failed to send or save request.",
+      error: err.message,
+    });
   }
 });
 
