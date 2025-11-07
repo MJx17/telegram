@@ -1,6 +1,6 @@
 const express = require("express");
 const axios = require("axios");
-
+const connectDB = require("./db");
 const app = express();
 
 app.use(express.json());
@@ -14,6 +14,7 @@ const BACKEND_CALLBACK_URL = process.env.BACKEND_CALLBACK_URL;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const Request = require("./request");
 
 // 📨 Send approval request
 app.post("/send-request", async (req, res) => {
@@ -68,32 +69,48 @@ app.post("/telegram-webhook", async (req, res) => {
 
     if (update.callback_query) {
       const query = update.callback_query;
-      const [decision, request_uuid] = query.data.split(":");
+      const [decisionRaw, request_uuid] = query.data.split(":");
       const chat_id = query.message.chat.id;
       const message_id = query.message.message_id;
       const approver = query.from.username || query.from.first_name;
 
+      // 🔤 Convert to past tense for DB and message
+      const decision =
+        decisionRaw === "approve" ? "approved" : "declined";
+      const emoji = decision === "approved" ? "✅" : "❌";
+
       // 1️⃣ Answer callback
       await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
         callback_query_id: query.id,
-        text: `You chose to ${decision.toUpperCase()}`
+        text: `You ${decision}`,
       });
 
-      // 2️⃣ Edit original message
-      const editedText = `${query.message.text}\n\n✅ <b>Decision:</b> ${decision.toUpperCase()} by @${approver}`;
+      // 2️⃣ Edit Telegram message
+      const editedText = `${query.message.text}\n\n${emoji} <b>Decision:</b> ${decision.toUpperCase()} by @${approver}`;
       await axios.post(`${TELEGRAM_API}/editMessageText`, {
         chat_id,
         message_id,
         text: editedText,
-        parse_mode: "HTML"
+        parse_mode: "HTML",
       });
 
-      // 3️⃣ Call your backend
+      // 3️⃣ Update DB
+      await Request.findOneAndUpdate(
+        { request_uuid },
+        {
+          decision, // now saves "approved" or "declined"
+          approver,
+          responded_at: new Date(),
+        },
+        { new: true }
+      );
+
+      // 4️⃣ Optional callback to your backend
       await axios.post(BACKEND_CALLBACK_URL, {
         request_uuid,
         decision,
         approver,
-        responded_at: new Date().toISOString()
+        responded_at: new Date().toISOString(),
       });
     }
 
@@ -103,7 +120,6 @@ app.post("/telegram-webhook", async (req, res) => {
     res.sendStatus(500);
   }
 });
-
 // 🧩 Set webhook (run once)
 app.get("/set-webhook", async (req, res) => {
   try {
@@ -131,5 +147,9 @@ app.get("/test-send", async (req, res) => {
 // ✅ Health check
 app.get("/", (req, res) => res.send("Telegram bot backend running."));
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+connectDB().then(() => {
+  const port = process.env.PORT || 5000;
+  app.listen(port, () => {
+    console.log(`🚀 Node test API running on port ${port}`);
+  });
+});
