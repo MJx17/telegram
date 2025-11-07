@@ -93,19 +93,27 @@ app.post("/telegram-webhook", async (req, res) => {
       const [decisionRaw, request_uuid] = query.data.split(":");
       const chat_id = query.message.chat.id;
       const message_id = query.message.message_id;
-      const approver = query.from.username || query.from.first_name;
+
+      // 🧍 Extract approver info
+      const firstName = query.from.first_name || "";
+      const lastName = query.from.last_name || "";
+      const username = query.from.username ? `@${query.from.username}` : "";
+      const fullName = `${firstName} ${lastName}`.trim();
+
+      // 🧩 Prefer full name > username > unknown
+      const approverDisplay = fullName || username || "Unknown";
 
       const decision = decisionRaw === "approve" ? "approved" : "declined";
       const emoji = decision === "approved" ? "✅" : "❌";
 
-      // 1️⃣ Acknowledge the button click
+      // 1️⃣ Acknowledge Telegram button press
       await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
         callback_query_id: query.id,
         text: `You ${decision}`,
       });
 
-      // 2️⃣ Update the Telegram message
-      const editedText = `${query.message.text}\n\n${emoji} <b>Decision:</b> ${decision.toUpperCase()} by @${approver}`;
+      // 2️⃣ Edit Telegram message with approver info
+      const editedText = `${query.message.text}\n\n${emoji} <b>Decision:</b> ${decision.toUpperCase()} by ${approverDisplay}`;
       await axios.post(`${TELEGRAM_API}/editMessageText`, {
         chat_id,
         message_id,
@@ -113,22 +121,25 @@ app.post("/telegram-webhook", async (req, res) => {
         parse_mode: "HTML",
       });
 
-      // 3️⃣ Update MongoDB record
+      // 3️⃣ Update MongoDB record with full info
       await Request.findOneAndUpdate(
         { request_uuid },
         {
           decision,
-          approver,
+          approver_username: username || null,
+          approver_fullname: fullName || null,
+          approver_display: approverDisplay,
           responded_at: new Date(),
         },
         { new: true }
       );
 
-      // 4️⃣ Optional backend callback
+      // 4️⃣ Optional callback to your backend
       await axios.post(BACKEND_CALLBACK_URL, {
         request_uuid,
         decision,
-        approver,
+        approver_fullname: fullName,
+        approver_username: username,
         responded_at: new Date().toISOString(),
       });
     }

@@ -1,15 +1,54 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const RequestSchema = new mongoose.Schema({
-  request_uuid: { type: String, required: true, unique: true },
-  requestor_fullname: String,
-  system_name: String,
-  type: String,
-  reason: String,
-  requested_at: String,
-  decision: { type: String, enum: ["approved", "declined", null], default: null },
-  approver: { type: String, default: null },
-  responded_at: { type: Date, default: null },
-}, { timestamps: true });
+  request_uuid: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  requestor_fullname: {
+    type: String,
+    required: true,
+  },
+  system_name: {
+    type: String,
+    required: true,
+  },
+  type: {
+    type: String,
+    required: true,
+  },
+  reason: {
+    type: String,
+    required: true,
+  },
+  requested_at: {
+    type: Date,
+    required: true,
+  },
 
-module.exports = mongoose.model("Request", RequestSchema);
+  // 🧠 Telegram approval fields
+  decision: {
+    type: String,
+    enum: ["approved", "declined", null],
+    default: null,
+  },
+  approver_fullname: {
+    type: String,
+    default: null,
+  },
+  approver_username: {
+    type: String,
+    default: null,
+  },
+  approver_display: {
+    type: String,
+    default: null,
+  },
+  responded_at: {
+    type: Date,
+    default: null,
+  },
+});
+
+export default mongoose.model("Request", RequestSchema);
