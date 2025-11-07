@@ -95,18 +95,16 @@ app.post("/telegram-webhook", async (req, res) => {
       const message_id = query.message.message_id;
       const approver = query.from.username || query.from.first_name;
 
-      // 🔤 Convert to past tense for DB and message
-      const decision =
-        decisionRaw === "approve" ? "approved" : "declined";
+      const decision = decisionRaw === "approve" ? "approved" : "declined";
       const emoji = decision === "approved" ? "✅" : "❌";
 
-      // 1️⃣ Answer callback
+      // 1️⃣ Acknowledge the button click
       await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
         callback_query_id: query.id,
         text: `You ${decision}`,
       });
 
-      // 2️⃣ Edit Telegram message
+      // 2️⃣ Update the Telegram message
       const editedText = `${query.message.text}\n\n${emoji} <b>Decision:</b> ${decision.toUpperCase()} by @${approver}`;
       await axios.post(`${TELEGRAM_API}/editMessageText`, {
         chat_id,
@@ -115,15 +113,18 @@ app.post("/telegram-webhook", async (req, res) => {
         parse_mode: "HTML",
       });
 
-      // 3️⃣ Update DB
-      await Request.create({
-        request_uuid,
-        decision,
-        approver,
-        responded_at: new Date(),
-      });
+      // 3️⃣ Update MongoDB record
+      await Request.findOneAndUpdate(
+        { request_uuid },
+        {
+          decision,
+          approver,
+          responded_at: new Date(),
+        },
+        { new: true }
+      );
 
-      // 4️⃣ Optional callback to your backend
+      // 4️⃣ Optional backend callback
       await axios.post(BACKEND_CALLBACK_URL, {
         request_uuid,
         decision,
@@ -134,7 +135,7 @@ app.post("/telegram-webhook", async (req, res) => {
 
     res.sendStatus(200);
   } catch (err) {
-    console.error("Webhook error:", err.message);
+    console.error("❌ Webhook error:", err.response?.data || err.message);
     res.sendStatus(500);
   }
 });
