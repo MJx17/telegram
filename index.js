@@ -95,15 +95,12 @@ app.post("/telegram-webhook", async (req, res) => {
       });
 
       // 3️⃣ Update DB
-      await Request.findOneAndUpdate(
-        { request_uuid },
-        {
-          decision, // now saves "approved" or "declined"
-          approver,
-          responded_at: new Date(),
-        },
-        { new: true }
-      );
+      await Request.create({
+        request_uuid,
+        decision,
+        approver,
+        responded_at: new Date(),
+      });
 
       // 4️⃣ Optional callback to your backend
       await axios.post(BACKEND_CALLBACK_URL, {
