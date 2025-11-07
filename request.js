@@ -1,4 +1,5 @@
-import mongoose from "mongoose";
+const mongoose = require("mongoose");
+
 
 const RequestSchema = new mongoose.Schema({
   request_uuid: {
@@ -51,4 +52,4 @@ const RequestSchema = new mongoose.Schema({
   },
 });
 
-export default mongoose.model("Request", RequestSchema);
+module.exports = mongoose.model("Request", RequestSchema);
