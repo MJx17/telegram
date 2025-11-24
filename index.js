@@ -26,11 +26,12 @@ app.post("/send-request", async (req, res) => {
       system_name,
       type,
       reason,
-      requested_at,
+      timestamp,
     } = req.body;
 
-    const expires_at = new Date(new Date(requested_at).getTime() + EXPIRE_MINUTES * 60000);
-    const requestedAt = requested_at ? new Date(requested_at) : new Date();
+
+    const requestedAt = timestamp ? new Date(timestamp) : new Date();
+    const expires_at = new Date(new Date(requestedAt).getTime() + EXPIRE_MINUTES * 60000);
     // Save to MongoDB
     const newRequest = await Request.create({
       request_uuid,
