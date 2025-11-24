@@ -1,54 +1,61 @@
 const express = require("express");
 const axios = require("axios");
 const connectDB = require("./db");
+const Request = require("./request");
 const app = express();
-
-app.use(express.json());
 const dotenv = require("dotenv");
 dotenv.config();
 
-// 🧠 Config
+app.use(express.json());
+
+// -------------------- CONFIG --------------------
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 const BACKEND_CALLBACK_URL = process.env.BACKEND_CALLBACK_URL;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
-
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-const Request = require("./request");
+const EXPIRE_MINUTES = 15; // Expiration time
 
+// -------------------- SEND REQUEST --------------------
 app.post("/send-request", async (req, res) => {
   try {
     const {
       request_uuid,
       requestor_fullname,
+      login_fullname,
       system_name,
       type,
       reason,
       requested_at,
     } = req.body;
 
-    // 🧩 1️⃣ Save to MongoDB
+    const expires_at = new Date(new Date(requested_at).getTime() + EXPIRE_MINUTES * 60000);
+
+    // Save to MongoDB
     const newRequest = await Request.create({
       request_uuid,
       requestor_fullname,
+      login_fullname,
       system_name,
       type,
       reason,
       requested_at,
+      decision: "pending",
+      expires_at,
     });
 
-    // 🧠 2️⃣ Prepare Telegram message text
+    // Build Telegram message
     const text = `
 🔐 <b>Privilege Access Request</b>
 
-👤 <b>Full Name:</b> ${requestor_fullname}
+👤 <b>Requestor:</b> ${requestor_fullname}
+🔑 <b>Login Fullname:</b> ${login_fullname ?? "N/A"}
 🖥️ <b>System:</b> ${system_name}
 📂 <b>Type:</b> ${type}
 📝 <b>Reason:</b> ${reason}
 ⏰ <b>Requested At:</b> ${requested_at}
 `;
 
-    // 📨 3️⃣ Telegram payload
     const payload = {
       chat_id: CHAT_ID,
       text,
@@ -63,27 +70,24 @@ app.post("/send-request", async (req, res) => {
       },
     };
 
-    // 🚀 4️⃣ Send to Telegram
     await axios.post(`${TELEGRAM_API}/sendMessage`, payload);
 
-    // ✅ 5️⃣ Respond success
     res.status(200).json({
       status: "ok",
-      message: "Request sent and saved successfully.",
+      message: "Forwarded and saved.",
       data: newRequest,
     });
   } catch (err) {
     console.error("❌ Error in /send-request:", err.message);
-
     res.status(500).json({
       status: "error",
-      message: "Failed to send or save request.",
+      message: "Forwarding failed.",
       error: err.message,
     });
   }
 });
 
-// 💬 Telegram webhook
+// -------------------- TELEGRAM WEBHOOK --------------------
 app.post("/telegram-webhook", async (req, res) => {
   try {
     const update = req.body;
@@ -94,25 +98,59 @@ app.post("/telegram-webhook", async (req, res) => {
       const chat_id = query.message.chat.id;
       const message_id = query.message.message_id;
 
-      // 🧍 Extract approver info
+      // Fetch request from MongoDB
+      const existing = await Request.findOne({ request_uuid });
+      const now = new Date();
+
+      if (!existing) {
+        await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+          callback_query_id: query.id,
+          text: "Request not found.",
+        });
+        return res.sendStatus(200);
+      }
+
+      if (existing.decision !== "pending" || (existing.expires_at && existing.expires_at <= now)) {
+        // Already responded or expired
+        await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+          callback_query_id: query.id,
+          text: "⏳ This request has expired or already been responded to.",
+        });
+
+        // Mark as expired if still pending
+        if (existing.decision === "pending") {
+          await Request.updateOne(
+            { request_uuid },
+            { decision: "expired", responded_at: now }
+          );
+          await axios.post(`${TELEGRAM_API}/editMessageText`, {
+            chat_id,
+            message_id,
+            text: `❌ <b>Request Expired</b>\n\nThis request is no longer valid. Please submit a new one.`,
+            parse_mode: "HTML",
+          });
+        }
+
+        return res.sendStatus(200);
+      }
+
+      // Extract approver info
       const firstName = query.from.first_name || "";
       const lastName = query.from.last_name || "";
       const username = query.from.username ? `@${query.from.username}` : "";
       const fullName = `${firstName} ${lastName}`.trim();
-
-      // 🧩 Prefer full name > username > unknown
       const approverDisplay = fullName || username || "Unknown";
 
       const decision = decisionRaw === "approve" ? "approved" : "declined";
       const emoji = decision === "approved" ? "✅" : "❌";
 
-      // 1️⃣ Acknowledge Telegram button press
+      // Acknowledge button
       await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
         callback_query_id: query.id,
         text: `You ${decision}`,
       });
 
-      // 2️⃣ Edit Telegram message with approver info
+      // Edit Telegram message
       const editedText = `${query.message.text}\n\n${emoji} <b>Decision:</b> ${decision.toUpperCase()} by ${approverDisplay}`;
       await axios.post(`${TELEGRAM_API}/editMessageText`, {
         chat_id,
@@ -121,7 +159,7 @@ app.post("/telegram-webhook", async (req, res) => {
         parse_mode: "HTML",
       });
 
-      // 3️⃣ Update MongoDB record with full info
+      // Update MongoDB
       await Request.findOneAndUpdate(
         { request_uuid },
         {
@@ -129,18 +167,18 @@ app.post("/telegram-webhook", async (req, res) => {
           approver_username: username || null,
           approver_fullname: fullName || null,
           approver_display: approverDisplay,
-          responded_at: new Date(),
+          responded_at: now,
         },
         { new: true }
       );
 
-      // 4️⃣ Optional callback to your backend
+      // Callback to main backend
       await axios.post(BACKEND_CALLBACK_URL, {
         request_uuid,
         decision,
         approver_fullname: fullName,
         approver_username: username,
-        responded_at: new Date().toISOString(),
+        responded_at: now.toISOString(),
       });
     }
 
@@ -150,7 +188,8 @@ app.post("/telegram-webhook", async (req, res) => {
     res.sendStatus(500);
   }
 });
-// 🧩 Set webhook (run once)
+
+// -------------------- SET TELEGRAM WEBHOOK --------------------
 app.get("/set-webhook", async (req, res) => {
   try {
     const resp = await axios.get(
@@ -162,6 +201,7 @@ app.get("/set-webhook", async (req, res) => {
   }
 });
 
+// -------------------- TEST SEND --------------------
 app.get("/test-send", async (req, res) => {
   try {
     const resp = await axios.post(`${TELEGRAM_API}/sendMessage`, {
@@ -174,9 +214,54 @@ app.get("/test-send", async (req, res) => {
   }
 });
 
-// ✅ Health check
+// -------------------- PING --------------------
+app.get("/ping", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    message: "Node forwarder online",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// -------------------- ROOT --------------------
 app.get("/", (req, res) => res.send("Telegram bot backend running."));
 
+// -------------------- EXPIRATION WORKER --------------------
+setInterval(async () => {
+  try {
+    const now = new Date();
+    const expiredRequests = await Request.find({
+      decision: "pending",
+      expires_at: { $lte: now },
+    });
+
+    for (const reqItem of expiredRequests) {
+      await Request.updateOne(
+        { request_uuid: reqItem.request_uuid },
+        { decision: "expired", responded_at: now }
+      );
+
+      // Edit Telegram message
+      await axios.post(`${TELEGRAM_API}/editMessageText`, {
+        chat_id: CHAT_ID,
+        message_id: reqItem.telegram_message_id, // store message_id when sending
+        text: `❌ <b>Request Expired</b>\n\nThis request is no longer valid. Please submit a new one.`,
+        parse_mode: "HTML",
+      });
+
+      // Notify main backend
+      await axios.post(BACKEND_CALLBACK_URL, {
+        request_uuid: reqItem.request_uuid,
+        decision: "expired",
+        responded_at: now.toISOString(),
+      });
+    }
+  } catch (err) {
+    console.error("❌ Expiration worker error:", err.message);
+  }
+}, 60000); // Runs every 1 minute
+
+// -------------------- CONNECT DB & START --------------------
 connectDB().then(() => {
   const port = process.env.PORT || 5000;
   app.listen(port, () => {
