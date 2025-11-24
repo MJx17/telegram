@@ -202,6 +202,23 @@ app.get("/set-webhook", async (req, res) => {
   }
 });
 
+app.get("/request-status/:uuid", async (req, res) => {
+  const { uuid } = req.params;
+
+  const request = await Request.findOne({ request_uuid: uuid });
+
+  if (!request) {
+    return res.status(404).json({ error: "Request not found" });
+  }
+
+  res.json({
+    request_uuid: request.request_uuid,
+    decision: request.decision,
+    approver_fullname: request.approver_fullname,
+    approver_username: request.approver_username,
+    responded_at: request.responded_at,
+  });
+});
 // -------------------- TEST SEND --------------------
 app.get("/test-send", async (req, res) => {
   try {
