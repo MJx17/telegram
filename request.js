@@ -31,8 +31,8 @@ const RequestSchema = new mongoose.Schema({
   // 🧠 Telegram approval fields
   decision: {
     type: String,
-    enum: ["approved", "declined", null, 'pending', 'expired'],
-    default: pending,
+    enum: ["approved", "declined", "pending", "expired"],
+    default: null,
   },
   approver_fullname: {
     type: String,
