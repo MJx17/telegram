@@ -54,7 +54,7 @@ app.post("/send-request", async (req, res) => {
 🖥️ <b>System:</b> ${system_name}
 📂 <b>Type:</b> ${type}
 📝 <b>Reason:</b> ${reason}
-⏰ <b>Requested At:</b> ${requested_at}
+⏰ <b>Requested At:</b> ${requestedAt}
 `;
 
     const payload = {
