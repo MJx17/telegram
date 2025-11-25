@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 
-
 const RequestSchema = new mongoose.Schema({
   request_uuid: {
     type: String,
@@ -10,6 +9,10 @@ const RequestSchema = new mongoose.Schema({
   requestor_fullname: {
     type: String,
     required: true,
+  },
+  login_fullname: {
+    type: String,
+    default: null,
   },
   system_name: {
     type: String,
@@ -27,12 +30,14 @@ const RequestSchema = new mongoose.Schema({
     type: Date,
     required: true,
   },
-
-  // 🧠 Telegram approval fields
-  decision: {
+  expires_at: {
+    type: Date,
+    required: true,
+  },
+  status: {
     type: String,
     enum: ["approved", "declined", "pending", "expired"],
-    default: null,
+    default: "pending",
   },
   approver_fullname: {
     type: String,
@@ -48,6 +53,10 @@ const RequestSchema = new mongoose.Schema({
   },
   responded_at: {
     type: Date,
+    default: null,
+  },
+  telegram_message_id: {
+    type: Number,
     default: null,
   },
 });
