@@ -1,6 +1,6 @@
 const express = require("express");
 const dotenv = require("dotenv");
-const connectDB = require("./db");
+const connectDB = require("./db/mongo");
 const axios = require("axios");
 const Request = require("./models/request");
 const privilegeRoutes = require("./routes/mongo-request");
