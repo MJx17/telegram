@@ -1,6 +1,6 @@
 const express = require("express");
 const axios = require("axios");
-const Request = require("../models/Request");
+const Request = require("../models/request");
 const router = express.Router();
 
 const EXPIRE_MINUTES = 15;
