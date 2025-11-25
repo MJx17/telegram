@@ -1,15 +1,11 @@
 const express = require("express");
 const axios = require("axios");
-const Request = require("../models/request"); // MongoDB model
+const Request = require("../models/Request");
 const router = express.Router();
 
 const EXPIRE_MINUTES = 15;
-const {
-  CHAT_ID,
-  TELEGRAM_API,
-  BACKEND_CALLBACK_URL,
-  WEBHOOK_URL
-} = process.env;
+const { BOT_TOKEN, CHAT_ID, BACKEND_CALLBACK_URL, WEBHOOK_URL } = process.env;
+const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`; // declared here
 
 // Helper – build Telegram message
 function buildTelegramMessage(r) {
@@ -28,16 +24,7 @@ function buildTelegramMessage(r) {
 /* -------------------- SEND REQUEST -------------------- */
 router.post("/send-request", async (req, res) => {
   try {
-    const {
-      request_uuid,
-      requestor_fullname,
-      login_fullname,
-      system_name,
-      type,
-      reason,
-      timestamp
-    } = req.body;
-
+    const { request_uuid, requestor_fullname, login_fullname, system_name, type, reason, timestamp } = req.body;
     const requested_at = timestamp ? new Date(timestamp) : new Date();
     const expires_at = new Date(requested_at.getTime() + EXPIRE_MINUTES * 60000);
 
@@ -53,7 +40,6 @@ router.post("/send-request", async (req, res) => {
       status: "pending"
     });
 
-    // Send Telegram message
     const resp = await axios.post(`${TELEGRAM_API}/sendMessage`, {
       chat_id: CHAT_ID,
       text: buildTelegramMessage(newRequest),
@@ -68,16 +54,10 @@ router.post("/send-request", async (req, res) => {
       }
     });
 
-    // Save Telegram message ID to DB
-    const telegram_message_id = resp.data.result.message_id;
-    newRequest.telegram_message_id = telegram_message_id;
+    newRequest.telegram_message_id = resp.data.result.message_id;
     await newRequest.save();
 
-    res.json({
-      status: "ok",
-      message: "Forwarded and saved.",
-      data: newRequest
-    });
+    res.json({ status: "ok", message: "Forwarded and saved.", data: newRequest });
   } catch (err) {
     console.error("send-request error:", err);
     res.status(500).json({ error: err.message });
@@ -92,84 +72,37 @@ router.post("/telegram-webhook", async (req, res) => {
 
     const q = update.callback_query;
     const [action, request_uuid] = q.data.split(":");
-
     const chat_id = q.message.chat.id;
     const message_id = q.message.message_id;
-
     const existing = await Request.findOne({ request_uuid });
     const now = new Date();
 
     if (!existing) {
-      await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
-        callback_query_id: q.id,
-        text: "Request not found."
-      });
+      await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: q.id, text: "Request not found." });
       return res.sendStatus(200);
     }
 
     if (existing.status !== "pending" || existing.expires_at <= now) {
-      await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
-        callback_query_id: q.id,
-        text: "⏳ Request expired or already responded."
-      });
-
+      await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: q.id, text: "⏳ Request expired or already responded." });
       if (existing.status === "pending") {
-        await Request.updateOne(
-          { request_uuid },
-          { status: "expired", responded_at: now }
-        );
-
-        await axios.post(`${TELEGRAM_API}/editMessageText`, {
-          chat_id,
-          message_id,
-          parse_mode: "HTML",
-          text: `❌ <b>Request Expired</b>\n\nThis request is no longer valid.`
-        });
+        await Request.updateOne({ request_uuid }, { status: "expired", responded_at: now });
+        await axios.post(`${TELEGRAM_API}/editMessageText`, { chat_id, message_id, parse_mode: "HTML", text: `❌ <b>Request Expired</b>\n\nThis request is no longer valid.` });
       }
-
       return res.sendStatus(200);
     }
 
-    const fn = q.from.first_name || "";
-    const ln = q.from.last_name || "";
-    const un = q.from.username ? `@${q.from.username}` : "";
-    const fullName = `${fn} ${ln}`.trim();
-    const approverDisplay = fullName || un || "Unknown";
-
+    const fullName = `${q.from.first_name || ""} ${q.from.last_name || ""}`.trim();
+    const username = q.from.username ? `@${q.from.username}` : "";
+    const approverDisplay = fullName || username || "Unknown";
     const status = action === "approve" ? "approved" : "declined";
     const emoji = status === "approved" ? "✅" : "❌";
 
-    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
-      callback_query_id: q.id,
-      text: `You ${status}`
-    });
-
+    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: q.id, text: `You ${status}` });
     const editedText = `${q.message.text}\n\n${emoji} <b>Status:</b> ${status.toUpperCase()} by ${approverDisplay}`;
-    await axios.post(`${TELEGRAM_API}/editMessageText`, {
-      chat_id,
-      message_id,
-      text: editedText,
-      parse_mode: "HTML"
-    });
+    await axios.post(`${TELEGRAM_API}/editMessageText`, { chat_id, message_id, text: editedText, parse_mode: "HTML" });
 
-    await Request.findOneAndUpdate(
-      { request_uuid },
-      {
-        status,
-        approver_fullname: fullName,
-        approver_username: un,
-        approver_display: approverDisplay,
-        responded_at: now
-      }
-    );
-
-    await axios.post(BACKEND_CALLBACK_URL, {
-      request_uuid,
-      status,
-      approver_fullname: fullName,
-      approver_username: un,
-      responded_at: now.toISOString()
-    });
+    await Request.findOneAndUpdate({ request_uuid }, { status, approver_fullname: fullName, approver_username: username, approver_display: approverDisplay, responded_at: now });
+    await axios.post(BACKEND_CALLBACK_URL, { request_uuid, status, approver_fullname: fullName, approver_username: username, responded_at: now.toISOString() });
 
     res.sendStatus(200);
   } catch (err) {
@@ -191,23 +124,12 @@ router.get("/set-webhook", async (req, res) => {
 router.get("/request-status/:uuid", async (req, res) => {
   const request = await Request.findOne({ request_uuid: req.params.uuid });
   if (!request) return res.status(404).json({ error: "Not found" });
-
-  res.json({
-    request_uuid: request.request_uuid,
-    status: request.status,
-    approver_fullname: request.approver_fullname,
-    approver_username: request.approver_username,
-    responded_at: request.responded_at,
-    telegram_message_id: request.telegram_message_id
-  });
+  res.json({ request_uuid: request.request_uuid, status: request.status, approver_fullname: request.approver_fullname, approver_username: request.approver_username, responded_at: request.responded_at, telegram_message_id: request.telegram_message_id });
 });
 
 router.get("/test-send", async (req, res) => {
   try {
-    const r = await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: CHAT_ID,
-      text: "Hello 👋 from /test-send"
-    });
+    const r = await axios.post(`${TELEGRAM_API}/sendMessage`, { chat_id: CHAT_ID, text: "Hello 👋 from /test-send" });
     res.json(r.data);
   } catch (err) {
     res.status(500).json(err.message);
